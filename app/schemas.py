@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class CamelModel(BaseModel):
@@ -68,3 +68,8 @@ class ReceiptResponse(CamelModel):
     total: Decimal
     paid: Decimal
     balance: Decimal
+
+    
+    @field_serializer("total", "paid", "balance")
+    def serialize_money(self, value: Decimal) -> float:
+        return float(value)
