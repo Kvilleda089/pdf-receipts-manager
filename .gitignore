@@ -11,4 +11,5 @@ receipts.db
 Thumbs.db
 *.log
 *.db
-output/
+output/probar_pdf.py
+*.pdf
