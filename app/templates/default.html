@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Recibo {{ number }}</title>
+<style>
+  @page { size: A4; margin: 20mm 16mm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 11pt; color: #1f2937; }
+  table { width: 100%; border-collapse: collapse; }
+  .header td { vertical-align: top; }
+  .logo { max-height: 60px; max-width: 180px; }
+  .right { text-align: right; }
+  h1 { margin: 0; font-size: 22pt; color: #1d4ed8; }
+  .muted { color: #6b7280; }
+  .section { margin-top: 24px; }
+  .label { font-size: 9pt; text-transform: uppercase; color: #6b7280; margin-bottom: 4px; }
+  .items th { text-align: left; background: #eff6ff; padding: 8px; font-size: 10pt; }
+  .items td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
+  .totals { width: 50%; margin-left: 50%; margin-top: 16px; }
+  .totals td { padding: 6px 8px; }
+  .totals .balance td { font-weight: bold; font-size: 13pt; color: #1d4ed8; border-top: 2px solid #1d4ed8; }
+  .notes { margin-top: 28px; padding: 12px; background: #f9fafb; border-radius: 6px; font-size: 10pt; }
+</style>
+</head>
+<body>
+
+<table class="header">
+  <tr>
+    <td>
+      {% if receipt.issuer.logo_url %}
+        <img class="logo" src="{{ receipt.issuer.logo_url }}">
+      {% endif %}
+      <div><strong>{{ receipt.issuer.name }}</strong></div>
+      {% if receipt.issuer.tax_id %}<div class="muted">NIT: {{ receipt.issuer.tax_id }}</div>{% endif %}
+      {% if receipt.issuer.address %}<div class="muted">{{ receipt.issuer.address }}</div>{% endif %}
+    </td>
+    <td class="right">
+      <h1>RECIBO</h1>
+      <div><strong>{{ number }}</strong></div>
+      <div class="muted">{{ issue_date.strftime("%d/%m/%Y") }}</div>
+      <div class="muted">Ref: {{ receipt.external_reference }}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="section">
+  <div class="label">Cliente</div>
+  <div><strong>{{ receipt.customer.name }}</strong></div>
+  {% if receipt.customer.tax_id %}<div class="muted">NIT: {{ receipt.customer.tax_id }}</div>{% endif %}
+  {% if receipt.customer.email %}<div class="muted">{{ receipt.customer.email }}</div>{% endif %}
+  {% if receipt.customer.address %}<div class="muted">{{ receipt.customer.address }}</div>{% endif %}
+</div>
+
+<div class="section">
+  <table class="items">
+    <tr>
+      <th>Descripción</th>
+      <th class="right">Cant.</th>
+      <th class="right">Precio</th>
+      <th class="right">Subtotal</th>
+    </tr>
+    {% for item in receipt.items %}
+    <tr>
+      <td>{{ item.description }}</td>
+      <td class="right">{{ item.quantity.normalize() }}</td>
+      <td class="right">{{ symbol }}{{ item.unit_price | money }}</td>
+      <td class="right">{{ symbol }}{{ item.subtotal | money }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <table class="totals">
+    <tr><td>Total</td><td class="right">{{ symbol }}{{ total | money }}</td></tr>
+    {% for p in receipt.payments %}
+    <tr><td class="muted">{{ p.label }}</td><td class="right">{{ symbol }}{{ p.amount | money }}</td></tr>
+    {% endfor %}
+    <tr class="balance"><td>Saldo pendiente</td><td class="right">{{ symbol }}{{ balance | money }}</td></tr>
+  </table>
+</div>
+
+{% if receipt.notes %}
+<div class="notes">{{ receipt.notes }}</div>
+{% endif %}
+
+</body>
+</html>
