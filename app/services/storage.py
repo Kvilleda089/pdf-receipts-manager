@@ -38,14 +38,4 @@ def get_url(key: str, expires: int=3600) -> str:
 
 def upload_pdf(key: str, data: bytes) -> str:
     """Sube un PDF y devuelve una URL temporal (1 hora)."""
-    s3.put_object(
-        Bucket=settings.s3_bucket,
-        Key=key,
-        Body=data,
-        ContentType="application/pdf",
-    )
-    return s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": settings.s3_bucket, "Key": key},
-        ExpiresIn=3600,
-    )
+    return upload_file(key, data, "application/pdf")
