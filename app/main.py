@@ -1,7 +1,11 @@
+import logging
+
+
 from contextlib import asynccontextmanager
 from datetime import date
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +21,8 @@ from app.services.renderer import render_pdf
 from app.services.storage import ensure_bucket, get_url, upload_pdf
 from app.security import get_api_project
 
+logging.basicConfig(level=logging.WARNING)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,6 +33,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PDF Receipts Manager", lifespan=lifespan)
 
+MAX_BODY_BYTES = 3_000_000  # 3 MB
+
+
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    length = request.headers.get("content-length")
+    if length:
+        try:
+            too_big = int(length) > MAX_BODY_BYTES
+        except ValueError:
+            return JSONResponse(status_code=400, content={"detail": "Cabecera inválida"})
+        if too_big:
+            return JSONResponse(
+                status_code=413, content={"detail": "Petición demasiado grande"}
+            )
+    return await call_next(request)
 
 @app.get("/health")
 def health():
