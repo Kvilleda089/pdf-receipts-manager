@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Integer, String, create_engine
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, create_engine
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -32,6 +32,22 @@ class Counter(Base):
     project: Mapped[str] = mapped_column(String(50), primary_key=True)
     last_number: Mapped[int] = mapped_column(Integer, default=0)
 
+
+class ApiClient(Base):
+    """Una API Key de una aplicación. Un proyecto puede tener varias."""
+
+    __tablename__ = "api_clients"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    project: Mapped[str] = mapped_column(String(100), index=True)
+    key_hash: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    status: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+
+    )
+    
 
 class DocumentRecord(Base):
     """Un documento PDF generado."""

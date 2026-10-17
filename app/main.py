@@ -15,6 +15,7 @@ from app.database.db import (
 from app.schemas import DocumentRequest, DocumentResponse
 from app.services.renderer import render_pdf
 from app.services.storage import ensure_bucket, get_url, upload_pdf
+from app.security import get_api_project
 
 
 @asynccontextmanager
@@ -36,17 +37,18 @@ def health():
 def create_document(
     request: DocumentRequest,
     session: Session = Depends(get_session),
+    project: str = Depends(get_api_project),
 ):
-    number = next_document_number(session, request.project)
+    number = next_document_number(session, project)
     pdf = render_pdf(request.html, number)
 
-    key = f"{request.project}/{date.today().year}/{number}.pdf"
+    key = f"{project}/{date.today().year}/{number}.pdf"
     pdf_url = upload_pdf(key, pdf)
 
     session.add(
         DocumentRecord(
             document_number=number,
-            project=request.project,
+            project=project,
             external_reference=request.external_reference,
             pdf_key=key,
             meta=request.metadata,
@@ -65,11 +67,12 @@ def create_document(
 def get_document(
     document_number: str,
     session: Session = Depends(get_session),
+    project: str = Depends(get_api_project),
 ):
     record = session.scalar(
         select(DocumentRecord).where(DocumentRecord.document_number == document_number)
     )
-    if record is None:
+    if record is None or record.project != project:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
     return DocumentResponse(
