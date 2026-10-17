@@ -7,7 +7,6 @@ class CamelModel(BaseModel):
 
 
 class DocumentRequest(CamelModel):
-    project: str = Field(min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
     external_reference: str = Field(
         alias="externalReference", min_length=1, max_length=100
     )
