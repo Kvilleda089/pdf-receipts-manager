@@ -1,41 +1,40 @@
-from datetime import date
-from pathlib import Path
+import re
+from urllib.parse import urlparse
 
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
 from weasyprint import HTML
+from weasyprint.urls import URLFetcher
+
+from app.config import settings
+
+# Acepta {{documentNumber}} y también {{ documentNumber }}
+NUMBER_PLACEHOLDER = re.compile(r"\{\{\s*documentNumber\s*\}\}")
 
 
-from app.schemas import ReceiptRequest
+class SafeURLFetcher(URLFetcher):
+    """Solo deja pasar recursos incrustados (data:) o de dominios autorizados."""
 
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+    def fetch(self, url, headers=None):
+        parsed = urlparse(url)
+        scheme = parsed.scheme.lower()
 
-SYMBOLS = {"GTQ": "Q", "USD": "$"}
+        if scheme == "data":
+            return super().fetch(url, headers)
 
-env = Environment(
-    loader=FileSystemLoader(TEMPLATES_DIR),
-    autoescape=select_autoescape(["html"]),
-)
+        if scheme in ("http", "https"):
+            host = (parsed.hostname or "").lower()
+            if host in settings.allowed_asset_hosts_set:
+                return super().fetch(url, headers)
+            raise ValueError(f"Dominio no permitido: {host}")
 
-def money(value) -> str:
-    """600 -> 600.00 ; 1234.5 -> 1,234.50"""
-    return f"{value:,.2f}"
+        raise ValueError(f"Protocolo no permitido: {scheme or 'desconocido'}")
 
-env.filters["money"] = money
 
-def render_receipt_pdf(receipt: ReceiptRequest, receipt_number: str) -> bytes:
-    """Convierte un recibo en un PDF (bytes)."""
-    try:
-        template = env.get_template(f"{receipt.template}.html")
-    except TemplateNotFound:
-        template = env.get_template("default.html")
-
-    html = template.render(
-        receipt=receipt,
-        number=receipt_number,
-        issue_date=receipt.issue_date or date.today(),
-        symbol=SYMBOLS.get(receipt.currency, receipt.currency),
-        total= receipt.total,
-        paid=receipt.paid,
-        balance=receipt.balance,
+def render_pdf(html: str, document_number: str) -> bytes:
+    """Reemplaza el marcador por el número y convierte el HTML a PDF."""
+    html = NUMBER_PLACEHOLDER.sub(lambda _: document_number, html)
+    fetcher = SafeURLFetcher(
+        timeout=10,
+        allowed_protocols=["data", "http", "https"],
+        allow_redirects=False,
     )
-    return HTML(string=html).write_pdf()
+    return HTML(string=html, url_fetcher=fetcher).write_pdf()
