@@ -8,6 +8,7 @@ from sqlalchemy.orm import (
     mapped_column,
     sessionmaker,
 )
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 
@@ -16,7 +17,11 @@ connect_args = (
     if settings.database_url.startswith("sqlite")
     else {}
 )
-engine = create_engine(settings.database_url, connect_args=connect_args)
+engine = create_engine(
+    settings.database_url, 
+    connect_args=connect_args,
+    pool_pre_ping=True,
+    )
 SessionLocal = sessionmaker(bind=engine)
 
 
@@ -78,10 +83,16 @@ def get_session():
 
 def next_document_number(session: Session, project: str) -> str:
     """RES-000001, RES-000002... un contador independiente por proyecto."""
-    counter = session.get(Counter, project)
+    counter = session.get(Counter, project, with_for_update=True)
+
     if counter is None:
-        counter = Counter(project=project, last_number=0)
-        session.add(counter)
+        try:
+            session.add(Counter(project=project, last_number=0))
+            session.flush()
+        except IntegrityError:
+            session.rollback()
+        counter = session.get(Counter, project, with_for_update=True)
+
     counter.last_number += 1
     session.flush()
     return f"{project[:3].upper()}-{counter.last_number:06d}"

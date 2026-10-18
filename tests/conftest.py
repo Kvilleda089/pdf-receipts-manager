@@ -1,3 +1,6 @@
+import os
+
+os.environ["DATABASE_URL"] = "sqlite://"
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -10,6 +13,8 @@ from app.security import hash_key
 
 RES_KEY = "rk_test_reservaciones"
 PED_KEY = "rk_test_pedidos"
+
+os.environ["DATABASE_URL"] = "sqlite://"
 
 
 @pytest.fixture
