@@ -1,19 +1,31 @@
+import logging
+
+
 from contextlib import asynccontextmanager
 from datetime import date
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database.db import ReceiptRecord, get_session, init_db, next_receipt_number
-from app.schemas import ReceiptRequest, ReceiptResponse
-from app.services.renderer import render_receipt_pdf
+from app.database.db import (
+    DocumentRecord,
+    get_session,
+    init_db,
+    next_document_number,
+)
+from app.schemas import DocumentRequest, DocumentResponse
+from app.services.renderer import render_pdf
 from app.services.storage import ensure_bucket, get_url, upload_pdf
+from app.security import get_api_project
+
+logging.basicConfig(level=logging.WARNING)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI): 
+async def lifespan(app: FastAPI):
     init_db()
     ensure_bucket()
     yield
@@ -21,62 +33,72 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PDF Receipts Manager", lifespan=lifespan)
 
+MAX_BODY_BYTES = 3_000_000  # 3 MB
+
+
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    length = request.headers.get("content-length")
+    if length:
+        try:
+            too_big = int(length) > MAX_BODY_BYTES
+        except ValueError:
+            return JSONResponse(status_code=400, content={"detail": "Cabecera inválida"})
+        if too_big:
+            return JSONResponse(
+                status_code=413, content={"detail": "Petición demasiado grande"}
+            )
+    return await call_next(request)
 
 @app.get("/health")
 def health():
     return {"status": "ok", "bucket": settings.s3_bucket}
 
-@app.post("/receipts", response_model=ReceiptResponse, status_code=201)
-def create_receipt(
-    receipt: ReceiptRequest,
-    session: Session = Depends(get_session),
-):
-    number = next_receipt_number(session, receipt.project)
-    pdf = render_receipt_pdf(receipt, number)
 
-    year = (receipt.issue_date or date.today()).year
-    key = f"{receipt.project}/{year}/{number}.pdf"
+@app.post("/documents", response_model=DocumentResponse, status_code=201)
+def create_document(
+    request: DocumentRequest,
+    session: Session = Depends(get_session),
+    project: str = Depends(get_api_project),
+):
+    number = next_document_number(session, project)
+    pdf = render_pdf(request.html, number)
+
+    key = f"{project}/{date.today().year}/{number}.pdf"
     pdf_url = upload_pdf(key, pdf)
 
     session.add(
-        ReceiptRecord(
-            receipt_number=number,
-            project=receipt.project,
-            external_reference=receipt.external_reference,
-            customer_name=receipt.customer.name,
-            currency=receipt.currency,
-            total=receipt.total,
-            paid=receipt.paid,
-            balance=receipt.balance,
+        DocumentRecord(
+            document_number=number,
+            project=project,
+            external_reference=request.external_reference,
             pdf_key=key,
+            meta=request.metadata,
         )
     )
     session.commit()
 
-    return ReceiptResponse(
-        receipt_number=number,
+    return DocumentResponse(
+        document_number=number,
+        external_reference=request.external_reference,
         pdf_url=pdf_url,
-        total=receipt.total,
-        paid=receipt.paid,
-        balance=receipt.balance,
     )
 
-@app.get("/receipts/{receipt_number}", response_model=ReceiptResponse)
-def get_receipt(
-    receipt_number: str,
+
+@app.get("/documents/{document_number}", response_model=DocumentResponse)
+def get_document(
+    document_number: str,
     session: Session = Depends(get_session),
+    project: str = Depends(get_api_project),
 ):
     record = session.scalar(
-        select(ReceiptRecord).where(ReceiptRecord.receipt_number == receipt_number)
+        select(DocumentRecord).where(DocumentRecord.document_number == document_number)
     )
+    if record is None or record.project != project:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
 
-    if record is None:
-        raise HTTPException(status_code=404, detail="Recibo no encontrado")
-
-    return ReceiptResponse(
-        receipt_number=record.receipt_number,
+    return DocumentResponse(
+        document_number=record.document_number,
+        external_reference=record.external_reference,
         pdf_url=get_url(record.pdf_key),
-        total=record.total,
-        paid=record.paid,
-        balance=record.balance,
     )
